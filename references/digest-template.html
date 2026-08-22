@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  CANONICAL Lark 群消息摘要 模板 —— 固化格式。
+  未经 owner 要求，不要改动整体信息架构、CSS 或各区块的结构。
+  用法：整份复制，只替换各处 FILL 注释标记之间的正文；head/CSS 原样保留。
+  发布前必须删除本说明注释块（<!DOCTYPE html> 与 <html> 之间的这一整段）。
+  警告：本注释内不得出现字面的注释结束符（横线横线大于号），否则注释会提前
+  终止、其余文字变成页面可见乱码——2026-07-11 已因此出过一次事故。
+
+  Owner 认可的关键要素（务必保留）：
+   1. 每个群 = 一个可折叠 <details>，默认收起。
+   2. <summary> 标题 = 群名 + 可选状态 pill（生产事故/待办/审批…）+ 消息条数
+      （<span class="cnt">N 条</span>），收起时即可概览。
+   3. 顶部 TL;DR 一句话结论 + 三个数字卡（有消息群/总群数、Owner 待办数、其它要点）。
+   4. §1「Owner 需要关注的」状态板（.qboard/.qcard），无则明确写"无"。
+   5. §2 群概览网格（.grid-groups），按消息量排序，锚点跳到明细。
+   6. §3 各群明细（折叠块）。§4 无消息群列表。
+  ============================================================================
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Lark 群消息摘要 · YYYY-MM-DD LABEL</title>
+<style>
+  :root {
+    --bg: #F6F7F5; --surface: #FFFFFF; --surface2: #EFF1EE;
+    --ink: #22252E; --ink2: #5C6270; --hairline: #E2E4DF;
+    --accent: #0E7C72; --accent-soft: #E0F0EE;
+    --settled: #2E7D46; --settled-soft: #E4F1E8;
+    --converge: #A96F14; --converge-soft: #F7EEDC;
+    --open: #6B7280; --open-soft: #ECEDEF;
+    --threat: #B3423A; --threat-soft: #F7E7E5;
+    --code-bg: #EEF0ED; --radius: 10px; --maxw: 880px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161B; --surface: #1C1F26; --surface2: #23262E;
+      --ink: #E6E8EB; --ink2: #9AA1AC; --hairline: #2C303A;
+      --accent: #4EC2B2; --accent-soft: #17332F;
+      --settled: #5CBB7B; --settled-soft: #1B2E22;
+      --converge: #D8A44A; --converge-soft: #332B18;
+      --open: #98A0AC; --open-soft: #262A32;
+      --threat: #E07A72; --threat-soft: #362020; --code-bg: #23262E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161B; --surface: #1C1F26; --surface2: #23262E;
+    --ink: #E6E8EB; --ink2: #9AA1AC; --hairline: #2C303A;
+    --accent: #4EC2B2; --accent-soft: #17332F;
+    --settled: #5CBB7B; --settled-soft: #1B2E22;
+    --converge: #D8A44A; --converge-soft: #332B18;
+    --open: #98A0AC; --open-soft: #262A32;
+    --threat: #E07A72; --threat-soft: #362020; --code-bg: #23262E;
+  }
+  :root[data-theme="light"] {
+    --bg: #F6F7F5; --surface: #FFFFFF; --surface2: #EFF1EE;
+    --ink: #22252E; --ink2: #5C6270; --hairline: #E2E4DF;
+    --accent: #0E7C72; --accent-soft: #E0F0EE;
+    --settled: #2E7D46; --settled-soft: #E4F1E8;
+    --converge: #A96F14; --converge-soft: #F7EEDC;
+    --open: #6B7280; --open-soft: #ECEDEF;
+    --threat: #B3423A; --threat-soft: #F7E7E5; --code-bg: #EEF0ED;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px; line-height: 1.78; padding: 0 20px 80px;
+  }
+  main { max-width: var(--maxw); margin: 0 auto; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover, a:focus-visible { text-decoration: underline; }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  code, .mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
+
+  header { padding: 52px 0 8px; }
+  .doc-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 18px; }
+  .badge { font-size: 12px; font-weight: 600; letter-spacing: .04em; padding: 3px 10px; border-radius: 100px; white-space: nowrap; }
+  .badge.version { background: var(--accent-soft); color: var(--accent); }
+  .badge.draft { background: var(--converge-soft); color: var(--converge); }
+  .badge.plain { background: var(--open-soft); color: var(--open); }
+  h1 { font-size: clamp(26px, 4.5vw, 34px); font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; text-wrap: balance; margin-bottom: 10px; }
+  .subtitle { color: var(--ink2); font-size: 15px; max-width: 46em; }
+
+  nav.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 26px 0 10px; }
+  nav.toc a { font-size: 13px; color: var(--ink2); background: var(--surface); border: 1px solid var(--hairline); padding: 5px 12px; border-radius: 100px; }
+  nav.toc a:hover { color: var(--accent); border-color: var(--accent); text-decoration: none; }
+
+  .tldr { background: var(--surface); border: 1px solid var(--hairline); border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 26px 28px; margin: 26px 0; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+  .tldr p.lead { font-size: 17.5px; font-weight: 600; line-height: 1.65; margin-bottom: 14px; text-wrap: balance; }
+  .tldr .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .fact { background: var(--surface2); border-radius: 8px; padding: 12px 14px; }
+  .fact .num { font-size: 21px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .fact .cap { font-size: 12.5px; color: var(--ink2); line-height: 1.5; margin-top: 2px; }
+
+  section { margin-top: 52px; }
+  .sec-head { display: flex; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--hairline); padding-bottom: 10px; margin-bottom: 22px; }
+  .sec-num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: .05em; }
+  h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.005em; text-wrap: balance; }
+  section > p { margin-bottom: 12px; }
+  .note { color: var(--ink2); font-size: 14px; }
+
+  .callout { border-radius: var(--radius); padding: 16px 20px; margin: 16px 0; font-size: 14.5px; line-height: 1.75; border: 1px solid var(--hairline); }
+  .callout.threat { background: var(--threat-soft); border-color: color-mix(in srgb, var(--threat) 30%, transparent); }
+  .callout.insight { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .callout.honest { background: var(--converge-soft); border-color: color-mix(in srgb, var(--converge) 30%, transparent); }
+  .callout .callout-title { font-weight: 700; margin-bottom: 6px; font-size: 14px; }
+
+  .pill { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 100px; white-space: nowrap; }
+  .pill.good { background: var(--settled-soft); color: var(--settled); }
+  .pill.warn { background: var(--converge-soft); color: var(--converge); }
+  .pill.bad { background: var(--threat-soft); color: var(--threat); }
+  .pill.neutral { background: var(--open-soft); color: var(--open); }
+  .pill.accent { background: var(--accent-soft); color: var(--accent); }
+
+  /* Owner 状态板 */
+  .qboard { display: grid; grid-template-columns: 1fr; gap: 14px; margin: 16px 0; }
+  .qcard { background: var(--surface); border: 1px solid var(--hairline); border-left: 4px solid var(--converge); border-radius: var(--radius); padding: 16px 18px; }
+  .qcard .qtop { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .qcard h4 { font-size: 15px; }
+  .qcard p { font-size: 14px; color: var(--ink2); line-height: 1.7; }
+  .qcard .src { font-size: 12.5px; color: var(--ink2); margin-top: 6px; }
+
+  /* 群概览网格 */
+  .grid-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
+  .gchip { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .gchip a { color: var(--ink); font-size: 13.5px; font-weight: 600; }
+  .gchip .cnt { font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 100px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+
+  details { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); margin: 12px 0; overflow: hidden; }
+  summary { cursor: pointer; padding: 14px 18px; font-size: 15px; font-weight: 700; color: var(--ink); list-style: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "＋"; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+  details[open] summary::before { content: "－"; }
+  details[open] summary { border-bottom: 1px solid var(--hairline); }
+  summary .cnt { font-size: 11.5px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 100px; padding: 1px 8px; margin-left: auto; }
+  .details-body { padding: 16px 20px; font-size: 14.5px; color: var(--ink2); }
+  .details-body h5 { font-size: 13px; font-weight: 700; color: var(--ink); text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 8px; }
+  .details-body h5:first-child { margin-top: 0; }
+  .details-body ul { padding-left: 1.3em; margin-bottom: 10px; }
+  .details-body li { margin-bottom: 6px; }
+  .details-body strong { color: var(--ink); }
+  .attn { border-left: 3px solid var(--converge); padding-left: 12px; margin: 10px 0; }
+  .attn.none { border-left-color: var(--settled); color: var(--settled); font-weight: 600; }
+
+  .quiet { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 16px 20px; font-size: 14px; color: var(--ink2); line-height: 2; }
+
+  footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--hairline); font-size: 13px; color: var(--ink2); }
+  footer ul { list-style: none; padding: 0; }
+  footer li { margin-bottom: 4px; }
+
+  @media (max-width: 720px) {
+    .tldr .facts { grid-template-columns: 1fr; }
+    summary .cnt { margin-left: 8px; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="doc-meta">
+    <!-- FILL: 时段徽标。LABEL = 上午/午间/晚间；EN = MORNING/MIDDAY/EVENING -->
+    <span class="badge version">LABEL · EN</span>
+    <span class="badge draft">YYYY-MM-DD</span>
+    <span class="badge plain">覆盖 HH:MM — HH:MM (SGT/北京)</span>
+  </div>
+  <h1>Lark 群消息摘要 · YYYY-MM-DD LABEL</h1>
+  <!-- FILL: 一句副标题，概述本时段主线 + 引导「先看 Owner 待办，再展开各群」 -->
+  <p class="subtitle">N 个群有新消息，覆盖 …… 。下方先看「Owner 需要关注的」，再按群展开细节。</p>
+  <nav class="toc">
+    <a href="#tldr">结论</a>
+    <a href="#owner-attention">Owner 待办</a>
+    <a href="#overview">群概览</a>
+    <a href="#groups">各群明细</a>
+    <a href="#quiet">无消息群</a>
+  </nav>
+</header>
+
+<!-- ===== TL;DR 一句话结论 + 三个数字卡 ===== -->
+<div class="tldr" id="tldr">
+  <div class="eyebrow">一句话结论</div>
+  <!-- FILL: 本时段最重要的 2-3 件事，浓缩成一句 -->
+  <p class="lead">……</p>
+  <div class="facts">
+    <div class="fact"><div class="num">N / M</div><div class="cap">有消息的群 / 总群数</div></div>
+    <div class="fact"><div class="num">N</div><div class="cap">需 Owner 亲自处理的事项</div></div>
+    <!-- FILL: 第三个数字自选，例如进行中的生产事故数 / 待审批数 -->
+    <div class="fact"><div class="num">N</div><div class="cap">……</div></div>
+  </div>
+</div>
+
+<!-- ===== §1 Owner 需要关注的（状态板）===== -->
+<section id="owner-attention">
+  <div class="sec-head"><span class="sec-num">§1</span><h2>Owner 需要关注的</h2></div>
+  <p class="note">仅列出他人明确请求 Owner 行动/决策、且 Owner 在本时段内尚未回应的事项。</p>
+  <div class="qboard">
+    <!-- FILL: 每个待办一张 qcard；pill 用 warn/bad。若无待办，整块删掉并写一句「本时段无需 Owner 亲自处理的事项」。 -->
+    <div class="qcard">
+      <div class="qtop"><h4>……标题……</h4><span class="pill warn">待回应</span></div>
+      <p>……详情，含背景与所需决策……</p>
+      <div class="src">来源：群名 · 发起人 · HH:MM</div>
+    </div>
+  </div>
+  <!-- 可选：顺带留意（无需立即行动）的事项 -->
+  <div class="callout insight">
+    <div class="callout-title">顺带留意（无需立即行动）</div>
+    ……
+  </div>
+</section>
+
+<!-- ===== §2 群概览网格 ===== -->
+<section id="overview">
+  <div class="sec-head"><span class="sec-num">§2</span><h2>群概览</h2></div>
+  <p class="note">本时段有消息的 N 个群，按消息量排序。点击跳到明细。</p>
+  <div class="grid-groups">
+    <!-- FILL: 每个有消息的群一个 gchip，anchor 对应 §3 的 details id，按条数降序 -->
+    <div class="gchip"><a href="#g-xxx">群名</a><span class="cnt">N</span></div>
+  </div>
+</section>
+
+<!-- ===== §3 各群明细（折叠块）===== -->
+<section id="groups">
+  <div class="sec-head"><span class="sec-num">§3</span><h2>各群明细</h2></div>
+  <p class="note">默认收起，点开看该群整体归纳与是否有 Owner 待办。</p>
+
+  <!-- FILL: 每个有消息的群重复一个 <details>。
+       summary = 群名 + 可选状态 pill（bad=生产事故/风险, warn=待办/待审批, accent=你参与过）+ <span class="cnt">N 条</span>。
+       无特殊状态的群 summary 只放群名 + 条数（pill 省略）。 -->
+  <details id="g-xxx">
+    <summary>群名 <span class="pill bad">生产事故</span><span class="cnt">N 条</span></summary>
+    <div class="details-body">
+      <h5>整体内容归纳</h5>
+      <ul>
+        <li>……逐条归纳，重点用 <strong>加粗</strong>，代码/ID 用 <code>code</code>……</li>
+      </ul>
+      <h5>Owner 需要关注的</h5>
+      <!-- 有待办：<div class="attn">……</div>；无待办：<div class="attn none">无</div> -->
+      <div class="attn none">无</div>
+    </div>
+  </details>
+
+</section>
+
+<!-- ===== §4 无消息群 ===== -->
+<section id="quiet">
+  <div class="sec-head"><span class="sec-num">§4</span><h2>无消息的群（N 个）</h2></div>
+  <div class="quiet">
+    <!-- FILL: 顿号分隔的群名列表 -->
+    群名1、群名2、……
+  </div>
+</section>
+
+<footer>
+  <ul>
+    <li><strong>覆盖时段</strong>：YYYY-MM-DD HH:MM — HH:MM（新加坡 / 北京时间）</li>
+    <li><strong>群统计</strong>：M 个群，N 个有新消息，共约 C 条</li>
+    <li><strong>下次摘要</strong>：……（下一个时段）</li>
+  </ul>
+  <p style="margin-top:12px;">YYYY-MM-DD LABEL · Lark 群消息自动摘要</p>
+</footer>
+
+</main>
+</body>
+</html>
