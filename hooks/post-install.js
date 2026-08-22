@@ -2,6 +2,10 @@
 /**
  * Post-install hook: create data directories, default config, and register
  * scheduler tasks for the three daily digest runs.
+ *
+ * Task names get a random hex suffix (e.g. lark-group-digest-morning-a3f8c1)
+ * to avoid collisions with user-defined tasks. Created task IDs are stored in
+ * state.json so pre-uninstall can delete them precisely via CLI.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -19,10 +23,10 @@ const LOGS_DIR = path.join(DATA_DIR, 'logs');
 const SCHEDULER_DB = path.join(ZYLOS_DIR, 'scheduler/scheduler.db');
 const SCHEDULER_CLI = path.join(ZYLOS_DIR, '.claude/skills/scheduler/scripts/cli.js');
 
-const TASKS = [
-  { name: 'lark-group-digest-morning', cron: '0 8 * * *' },
-  { name: 'lark-group-digest-midday',  cron: '0 13 * * *' },
-  { name: 'lark-group-digest-evening', cron: '0 19 * * *' },
+const TASK_SLOTS = [
+  { slot: 'morning', cron: '0 8 * * *' },
+  { slot: 'midday',  cron: '0 13 * * *' },
+  { slot: 'evening', cron: '0 19 * * *' },
 ];
 
 const DEFAULT_CONFIG = {
@@ -50,6 +54,7 @@ const DEFAULT_CONFIG = {
 const DEFAULT_STATE = {
   schema_version: 1,
   scheduler_prompt_hash: null,
+  scheduler_task_ids: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -81,17 +86,12 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function requireSqliteCli() {
-  try {
-    execFileSync('which', ['sqlite3'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch {
-    console.error('[lark-group-digest] sqlite3 CLI is required but not found.');
-    process.exit(1);
-  }
-}
-
 function run(command, args) {
   return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function randomSuffix() {
+  return crypto.randomBytes(3).toString('hex');
 }
 
 // ---------------------------------------------------------------------------
@@ -115,64 +115,80 @@ function promptHash(prompt) {
 // Scheduler task management
 // ---------------------------------------------------------------------------
 
-function schedulerTasks() {
-  if (!fs.existsSync(SCHEDULER_DB)) return [];
-  const names = TASKS.map(t => `'${t.name}'`).join(',');
-  const sql = `SELECT id, name, prompt, status, COALESCE(cron_expression, '') AS cron FROM tasks WHERE name IN (${names}) OR prompt LIKE '%lark-group-digest%' ORDER BY id;`;
-  const output = run('sqlite3', ['-json', SCHEDULER_DB, sql]).trim();
-  return output ? JSON.parse(output) : [];
+function isTaskPending(taskId) {
+  if (!taskId || !fs.existsSync(SCHEDULER_DB)) return false;
+  // TODO: replace with CLI query when scheduler adds --name/--id filter with JSON output
+  try {
+    const sql = `SELECT status FROM tasks WHERE id = '${taskId}';`;
+    const output = run('sqlite3', ['-json', SCHEDULER_DB, sql]).trim();
+    if (!output) return false;
+    const rows = JSON.parse(output);
+    return rows.length > 0 && rows[0].status === 'pending';
+  } catch {
+    return false;
+  }
 }
 
-function pauseTask(taskId) {
-  run('node', [SCHEDULER_CLI, 'pause', taskId]);
+function removeTask(taskId) {
+  run('node', [SCHEDULER_CLI, 'remove', taskId]);
 }
 
-function addTask(taskDef, prompt) {
-  run('node', [SCHEDULER_CLI, 'add', prompt, '--cron', taskDef.cron, '--priority', '3', '--name', taskDef.name]);
+function addTask(slot, cron, prompt) {
+  const name = `lark-group-digest-${slot}-${randomSuffix()}`;
+  const output = run('node', [SCHEDULER_CLI, 'add', prompt, '--cron', cron, '--priority', '3', '--name', name]);
+  const match = output.match(/Task created:\s*(task-\S+)/);
+  if (!match) throw new Error(`Failed to parse task ID from CLI output: ${output}`);
+  return match[1];
 }
 
-function isManagedPrompt(task) {
-  const prompt = task.prompt || '';
-  return prompt.includes('lark-group-digest') && prompt.includes('SKILL.md');
+function cleanupLegacyTasks() {
+  if (!fs.existsSync(SCHEDULER_DB)) return;
+  // Find old-style tasks with fixed names (no random suffix) and pause/remove them.
+  // TODO: replace with CLI query when scheduler adds --name filter
+  const legacyNames = TASK_SLOTS.map(t => `'lark-group-digest-${t.slot}'`).join(',');
+  const sql = `SELECT id, name, status FROM tasks WHERE name IN (${legacyNames}) ORDER BY id;`;
+  try {
+    const output = run('sqlite3', ['-json', SCHEDULER_DB, sql]).trim();
+    const tasks = output ? JSON.parse(output) : [];
+    for (const task of tasks) {
+      console.log(`[lark-group-digest] Removing legacy task: ${task.id} (${task.name})`);
+      removeTask(task.id);
+    }
+  } catch { /* best effort */ }
 }
 
 function ensureSchedulerTasks() {
   const expectedPrompt = schedulerPrompt();
   const expectedHash = promptHash(expectedPrompt);
   const state = readJson(STATE_PATH, DEFAULT_STATE);
-  const existingTasks = schedulerTasks();
+  const storedIds = state.scheduler_task_ids || {};
 
-  for (const taskDef of TASKS) {
-    const matching = existingTasks.filter(t => t.name === taskDef.name);
-    const activeCurrent = matching.find(
-      t => t.prompt === expectedPrompt && t.status === 'pending' && t.cron === taskDef.cron
-    );
+  cleanupLegacyTasks();
 
-    for (const task of matching) {
-      const isStale = task.prompt !== expectedPrompt || task.status !== 'pending' || task.cron !== taskDef.cron;
-      if (isStale) {
-        console.log(`[lark-group-digest] Pausing stale task: ${task.id} (${task.name})`);
-        pauseTask(task.id);
-      }
+  const newIds = {};
+
+  for (const { slot, cron } of TASK_SLOTS) {
+    const existingId = storedIds[slot];
+
+    if (existingId && isTaskPending(existingId)) {
+      console.log(`[lark-group-digest] Task already registered: ${existingId} (${slot})`);
+      newIds[slot] = existingId;
+      continue;
     }
 
-    // Also pause any unrelated tasks that match the managed prompt pattern but have wrong name
-    for (const task of existingTasks) {
-      if (!TASKS.some(td => td.name === task.name) && isManagedPrompt(task) && task.status === 'pending') {
-        console.log(`[lark-group-digest] Pausing orphan managed task: ${task.id}`);
-        pauseTask(task.id);
-      }
+    if (existingId) {
+      console.log(`[lark-group-digest] Stored task ${existingId} (${slot}) is no longer pending; replacing`);
+      try { removeTask(existingId); } catch { /* may already be gone */ }
     }
 
-    if (activeCurrent) {
-      console.log(`[lark-group-digest] Task already registered: ${activeCurrent.id} (${taskDef.name})`);
-    } else {
-      console.log(`[lark-group-digest] Creating scheduler task: ${taskDef.name} (${taskDef.cron})`);
-      addTask(taskDef, expectedPrompt);
-    }
+    console.log(`[lark-group-digest] Creating scheduler task: ${slot} (${cron})`);
+    const taskId = addTask(slot, cron, expectedPrompt);
+    console.log(`[lark-group-digest] Created: ${taskId}`);
+    newIds[slot] = taskId;
   }
 
   state.scheduler_prompt_hash = expectedHash;
+  state.scheduler_task_ids = newIds;
   writeJson(STATE_PATH, { ...DEFAULT_STATE, ...state, schema_version: 1 });
 }
 
@@ -181,7 +197,6 @@ function ensureSchedulerTasks() {
 // ---------------------------------------------------------------------------
 
 console.log('[lark-group-digest] Post-install starting...');
-requireSqliteCli();
 ensureDir(DATA_DIR);
 ensureDir(LOGS_DIR);
 
@@ -201,7 +216,6 @@ if (writeIfMissing(STATE_PATH, `${JSON.stringify(DEFAULT_STATE, null, 2)}\n`)) {
   console.log('[lark-group-digest] State exists; ensured default fields');
 }
 
-// Ensure output and pages dirs from config
 const config = readJson(CONFIG_PATH, DEFAULT_CONFIG);
 for (const dir of [config.output_dir || DEFAULT_CONFIG.output_dir, config.pages_dir || DEFAULT_CONFIG.pages_dir]) {
   ensureDir(dir);

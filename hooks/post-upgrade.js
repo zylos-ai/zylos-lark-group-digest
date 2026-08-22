@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Post-upgrade hook: migrate config schema and re-register scheduler tasks
- * if the prompt has changed.
+ * if the prompt has changed. Removes old tasks and creates fresh ones with
+ * new random suffixes; stores IDs in state.json.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -18,10 +19,10 @@ const STATE_PATH = path.join(DATA_DIR, 'state.json');
 const SCHEDULER_DB = path.join(ZYLOS_DIR, 'scheduler/scheduler.db');
 const SCHEDULER_CLI = path.join(ZYLOS_DIR, '.claude/skills/scheduler/scripts/cli.js');
 
-const TASKS = [
-  { name: 'lark-group-digest-morning', cron: '0 8 * * *' },
-  { name: 'lark-group-digest-midday',  cron: '0 13 * * *' },
-  { name: 'lark-group-digest-evening', cron: '0 19 * * *' },
+const TASK_SLOTS = [
+  { slot: 'morning', cron: '0 8 * * *' },
+  { slot: 'midday',  cron: '0 13 * * *' },
+  { slot: 'evening', cron: '0 19 * * *' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,10 @@ function run(command, args) {
   return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+function randomSuffix() {
+  return crypto.randomBytes(3).toString('hex');
+}
+
 function schedulerPrompt() {
   return [
     'lark-group-digest：读取 ~/zylos/.claude/skills/lark-group-digest/SKILL.md 后，',
@@ -57,6 +62,18 @@ function schedulerPrompt() {
 
 function promptHash(prompt) {
   return crypto.createHash('sha256').update(prompt).digest('hex');
+}
+
+function removeTask(taskId) {
+  run('node', [SCHEDULER_CLI, 'remove', taskId]);
+}
+
+function addTask(slot, cron, prompt) {
+  const name = `lark-group-digest-${slot}-${randomSuffix()}`;
+  const output = run('node', [SCHEDULER_CLI, 'add', prompt, '--cron', cron, '--priority', '3', '--name', name]);
+  const match = output.match(/Task created:\s*(task-\S+)/);
+  if (!match) throw new Error(`Failed to parse task ID from CLI output: ${output}`);
+  return match[1];
 }
 
 // ---------------------------------------------------------------------------
@@ -103,48 +120,50 @@ function migrateConfig() {
 function ensureSchedulerTasks() {
   const expectedPrompt = schedulerPrompt();
   const expectedHash = promptHash(expectedPrompt);
-  const state = readJson(STATE_PATH, { schema_version: 1, scheduler_prompt_hash: null });
+  const state = readJson(STATE_PATH, { schema_version: 1, scheduler_prompt_hash: null, scheduler_task_ids: {} });
 
-  if (state.scheduler_prompt_hash === expectedHash) {
+  if (state.scheduler_prompt_hash === expectedHash && Object.keys(state.scheduler_task_ids || {}).length > 0) {
     console.log('[lark-group-digest] Scheduler prompt unchanged; skipping re-registration');
     return;
   }
 
-  console.log('[lark-group-digest] Scheduler prompt changed; re-registering tasks...');
+  console.log('[lark-group-digest] Scheduler prompt changed or no stored tasks; re-registering...');
 
-  if (!fs.existsSync(SCHEDULER_DB)) {
-    console.log('[lark-group-digest] Scheduler DB not found; skipping');
-    return;
+  const oldIds = state.scheduler_task_ids || {};
+  for (const [slot, taskId] of Object.entries(oldIds)) {
+    try {
+      removeTask(taskId);
+      console.log(`[lark-group-digest] Removed old task: ${taskId} (${slot})`);
+    } catch {
+      console.log(`[lark-group-digest] Old task ${taskId} (${slot}) already gone.`);
+    }
   }
 
-  const names = TASKS.map(t => `'${t.name}'`).join(',');
-  const sql = `SELECT id, name, prompt, status, COALESCE(cron_expression, '') AS cron FROM tasks WHERE name IN (${names}) OR prompt LIKE '%lark-group-digest%' ORDER BY id;`;
-  const output = run('sqlite3', ['-json', SCHEDULER_DB, sql]).trim();
-  const existingTasks = output ? JSON.parse(output) : [];
-
-  for (const taskDef of TASKS) {
-    const matching = existingTasks.filter(t => t.name === taskDef.name);
-
-    for (const task of matching) {
-      if (task.prompt !== expectedPrompt || task.status !== 'pending' || task.cron !== taskDef.cron) {
-        console.log(`[lark-group-digest] Pausing stale task: ${task.id} (${task.name})`);
-        run('node', [SCHEDULER_CLI, 'pause', task.id]);
+  // Also clean up any legacy fixed-name tasks
+  // TODO: replace with CLI query when scheduler adds --name filter
+  if (fs.existsSync(SCHEDULER_DB)) {
+    const legacyNames = TASK_SLOTS.map(t => `'lark-group-digest-${t.slot}'`).join(',');
+    const sql = `SELECT id, name FROM tasks WHERE name IN (${legacyNames}) ORDER BY id;`;
+    try {
+      const output = run('sqlite3', ['-json', SCHEDULER_DB, sql]).trim();
+      const tasks = output ? JSON.parse(output) : [];
+      for (const task of tasks) {
+        console.log(`[lark-group-digest] Removing legacy task: ${task.id} (${task.name})`);
+        removeTask(task.id);
       }
-    }
+    } catch { /* best effort */ }
+  }
 
-    const activeCurrent = matching.find(
-      t => t.prompt === expectedPrompt && t.status === 'pending' && t.cron === taskDef.cron
-    );
-
-    if (activeCurrent) {
-      console.log(`[lark-group-digest] Task already current: ${activeCurrent.id} (${taskDef.name})`);
-    } else {
-      console.log(`[lark-group-digest] Creating task: ${taskDef.name} (${taskDef.cron})`);
-      run('node', [SCHEDULER_CLI, 'add', expectedPrompt, '--cron', taskDef.cron, '--priority', '3', '--name', taskDef.name]);
-    }
+  const newIds = {};
+  for (const { slot, cron } of TASK_SLOTS) {
+    console.log(`[lark-group-digest] Creating task: ${slot} (${cron})`);
+    const taskId = addTask(slot, cron, expectedPrompt);
+    console.log(`[lark-group-digest] Created: ${taskId}`);
+    newIds[slot] = taskId;
   }
 
   state.scheduler_prompt_hash = expectedHash;
+  state.scheduler_task_ids = newIds;
   writeJson(STATE_PATH, { ...state, schema_version: 1 });
 }
 
