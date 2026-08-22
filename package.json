@@ -1,15 +1,16 @@
 {
   "name": "zylos-lark-group-digest",
   "version": "0.1.0",
-  "description": "Lark group message digest component for Zylos agents",
+  "description": "Automated Lark group message digest for Zylos agents",
+  "main": "src/index.js",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node scripts/pagination.test.mjs"
+    "test": "node --test test/*.test.js scripts/pagination.test.mjs"
   },
   "keywords": ["zylos", "lark", "digest", "group-messages"],
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true
 }

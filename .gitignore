@@ -1,4 +1,29 @@
+# Dependencies
 node_modules/
-*.log
+
+# Environment
 .env
+.env.local
+
+# Runtime config (contains secrets)
 config.json
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# Temporary files
+*.tmp
+*.bak
