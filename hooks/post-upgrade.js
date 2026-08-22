@@ -19,9 +19,9 @@ const SCHEDULER_DB = path.join(ZYLOS_DIR, 'scheduler/scheduler.db');
 const SCHEDULER_CLI = path.join(ZYLOS_DIR, '.claude/skills/scheduler/scripts/cli.js');
 
 const TASKS = [
-  { name: 'lark-group-digest-morning', cron: '0 0 * * *' },
-  { name: 'lark-group-digest-midday',  cron: '0 5 * * *' },
-  { name: 'lark-group-digest-evening', cron: '0 11 * * *' },
+  { name: 'lark-group-digest-morning', cron: '0 8 * * *' },
+  { name: 'lark-group-digest-midday',  cron: '0 13 * * *' },
+  { name: 'lark-group-digest-evening', cron: '0 19 * * *' },
 ];
 
 // ---------------------------------------------------------------------------
