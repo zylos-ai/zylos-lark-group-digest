@@ -179,8 +179,42 @@ async function listAllMessages(chatId, startTime, endTime) {
   return collectPages(pageToken => listMessagePage(chatId, startTime, endTime, pageToken));
 }
 
+/**
+ * List every chat the bot is in, following page_token until has_more is false.
+ * listChats() from the lark lib returns a single page (default 50), which silently
+ * drops groups once the bot is in more than that many. Falls back to listChats()
+ * if the raw client call fails for any reason.
+ */
+async function listAllChats() {
+  try {
+    const client = getClient();
+    const chats = [];
+    let pageToken = null;
+    do {
+      const params = { page_size: 100 };
+      if (pageToken) params.page_token = pageToken;
+      const res = await client.im.chat.list({ params });
+      if (res.code !== 0) throw new Error(`im.chat.list failed: ${res.code} ${res.msg || ''}`);
+      for (const chat of res.data.items || []) {
+        chats.push({
+          id: chat.chat_id,
+          name: chat.name,
+          description: chat.description,
+          memberCount: chat.user_count,
+          chatType: chat.chat_type,
+        });
+      }
+      pageToken = res.data.has_more ? res.data.page_token : null;
+    } while (pageToken);
+    return { success: true, chats, hasMore: false };
+  } catch (err) {
+    console.error(`Warning: paginated chat listing failed (${err.message}); falling back to listChats()`);
+    return listChats();
+  }
+}
+
 async function main() {
-  const chatResult = await listChats();
+  const chatResult = await listAllChats();
   const chats = chatResult.chats || [];
 
   const groupData = [];
