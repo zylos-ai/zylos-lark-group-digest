@@ -105,20 +105,37 @@ The AI agent executes the full workflow: fetch messages → inspect images → s
 
 ## Collection and inactive groups
 
-The fetcher fully paginates the current user's groups in stable creation order,
-then requests messages only inside the digest time window. JSON retains the
-existing `group`, `messageCount`, and `formatted` fields, plus `chatId`, `status`,
-raw `messages`, and an `error` when a group is unavailable or only partially read.
-Publish raw archives only to private local storage. Summary pages must require
-owner login and have no active share links.
+The fetcher enumerates the current user's groups in descending activity order,
+then requests messages only inside the digest time window. After **three
+consecutive groups confirmed idle since the window start**, it stops making history requests
+for the remaining groups. For each successfully read window-empty group, make one
+additional descending history request (`page_size: 1`, `start_time`, no `end_time`).
+Only an empty probe counts towards stopping. Messages after the window end reset
+the streak and are never included in the digest. A nonempty window result or any
+read/probe error resets the streak. Probe failures are visible as
+`activityCheck: "unavailable"` and `activityCheckError`; window results remain valid.
+Skipped groups have `status: "skipped"`, `messageCount: null`, and an explicit
+reason; they are not reported as verified empty groups.
 
-The Lark group-list response currently provides **no last-active timestamp**.
-Active-order sorting does not supply one and can omit groups during pagination
-as activity moves entries across pages. Therefore this version does not guess
-inactivity from list position or previous runs. An idle group costs one bounded
-history request; it never triggers a second latest-message probe. Timestamp-based
-skipping requires reliable metadata from the platform before it can be enabled.
-See the official [group-list response and pagination warning](https://open.larksuite.com/document/server-docs/group/chat/list).
+This is a cost-saving heuristic, **not a completeness guarantee**. Lark does not
+return the last-active timestamp. The extra probe prevents groups active only
+after the window from incorrectly ending the scan. Activity
+changes during pagination can also move groups across pages. See the official
+[group-list response and pagination warning](https://open.larksuite.com/document/server-docs/group/chat/list).
+
+For historical windows, retries after an authorization delay, or exhaustive
+coverage, pass `--full-scan`. This disables early stopping and uses stable
+creation-order enumeration:
+
+```bash
+node scripts/digest.mjs --start <UNIX_SEC> --end <UNIX_SEC> --full-scan
+```
+
+JSON retains `group`, `messageCount`, and `formatted`, plus `chatId`, `status`,
+raw `messages`, and an `error` when a group is unavailable or partially read.
+Keep raw archives in private local storage; summary pages must require owner
+login and have no active share links. Summaries and notifications must distinguish
+scanned, empty, failed, and skipped groups and disclose when early stopping occurs.
 
 ## Design Notes
 

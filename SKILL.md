@@ -110,7 +110,7 @@ bridge that the digest is blocked on user authorization.** Load the Lark shared
 authentication skill and run the supplied incremental authorization command;
 send the fresh authorization URL and QR image to the owner. Ask the owner to
 confirm when finished, then complete the device flow before retrying the original
-time window. Do not publish an empty digest, mark the run successful, or silently
+time window with `--full-scan`. Do not publish an empty digest, mark the run successful, or silently
 fall back to the bot. If the owner has not replied, keep the task pending.
 For API-side permission errors, follow the Lark shared skill's app-scope guidance.
 
@@ -123,6 +123,18 @@ node <skill-dir>/scripts/digest.mjs --start <UNIX_SEC> --end <UNIX_SEC> \
   --out <output_dir>/YYYY-MM-DD-<suffix>.json \
   --config ~/zylos/components/lark-group-digest/config.json
 ```
+
+Default runs list groups by descending activity time and stop fetching history
+after three consecutive groups confirmed idle since the window start. Nonempty results and errors
+reset the streak. A successful empty window query is followed by a latest-message
+probe from the window start to now (one message, no window end); only an empty
+probe counts. A message after the window end resets the streak but is not included
+in the summary. Probe failures are visible in `activityCheckError` and reset the
+streak; they do not invalidate successfully fetched window messages.
+This heuristic saves calls but can miss messages; it does not
+prove that every later group is inactive. For historical backfills, delayed
+retries, or an explicit request for complete coverage, add `--full-scan` (stable
+creation order, no early stop).
 
 Raw JSON archives are permanent (not deleted after summarization).
 
@@ -147,6 +159,10 @@ If download fails, mark the image unavailable; do not invent its contents.
 Check `status` and `error` first. A group with `status: "error"` is **unavailable or
 partial**, never a no-message group even when `messageCount` is zero. Show failed
 groups separately and disclose incomplete coverage in the owner notification.
+Groups with `status: "skipped"` and `messageCount: null` were not queried because
+of early stopping; show them as **not scanned**, never as no-message groups.
+Report scanned/skipped counts in the page and owner notification. Do not describe
+a run with skipped groups as full coverage.
 A nonzero fatal exit means no new digest artifact; do not reuse an old output file.
 
 Generate Chinese summaries per group:

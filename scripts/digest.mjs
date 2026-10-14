@@ -3,7 +3,7 @@
  * Lark Group Digest — fetch messages, resolve senders, format for summarization.
  *
  * Usage:
- *   node digest.mjs --start <unix_sec> --end <unix_sec> [--out <path>] [--config <path>]
+ *   node digest.mjs --start <unix_sec> --end <unix_sec> [--out <path>] [--config <path>] [--full-scan]
  *
  * Output: JSON array of { group, messageCount, formatted } to stdout (or --out file).
  * `formatted` is a human/agent-readable string of all messages, with resolved
@@ -25,11 +25,12 @@ const { values: args } = parseArgs({
     end: { type: 'string' },
     out: { type: 'string' },
     config: { type: 'string' },
+    'full-scan': { type: 'boolean', default: false },
   },
 });
 
 if (!args.start || !args.end) {
-  console.error('Usage: digest.mjs --start <unix_sec> --end <unix_sec> [--out <path>] [--config <path>]');
+  console.error('Usage: digest.mjs --start <unix_sec> --end <unix_sec> [--out <path>] [--config <path>] [--full-scan]');
   process.exit(1);
 }
 
@@ -123,8 +124,9 @@ async function main() {
     throw new Error('Expected integer UNIX seconds with 0 <= start < end');
   }
   await client.authorize();
-  const chats = await listGroups(client);
-  const groupData = await fetchGroups(client, chats, start, end);
+  const scanOptions = { fullScan: args['full-scan'] };
+  const chats = await listGroups(client, scanOptions);
+  const groupData = await fetchGroups(client, chats, start, end, scanOptions);
   for (const g of groupData) {
     for (const m of (g.messages || [])) {
       if (m.sender && m.senderName) nameCache.set(m.sender, m.senderName);
@@ -136,7 +138,7 @@ async function main() {
 
   const output = [];
   for (const g of groupData) {
-    if (g.messageCount === 0) {
+    if (g.messageCount === 0 || g.status === 'skipped') {
       output.push({ ...g, messages: undefined });
       continue;
     }
