@@ -80,6 +80,7 @@ test('messages retain sender and image evidence and all pages within the request
   assert.equal(data.messages[0].senderName, 'Reader');
   assert.match(data.messages[0].content, /img_test/);
   assert.ok(calls.every(p => p.start_time === '100' && p.end_time === '200' && p.with_sender_name === true));
+  assert.ok(calls.every(p => p.card_msg_content_type === 'user_card_content'));
 });
 test('per-group reads and partial failures remain visible before early stopping', async () => {
   let calls = 0;
@@ -182,4 +183,57 @@ test('malformed activity probe does not prove inactivity', async () => {
   const groups = await fetchGroups({ get: async (_, p) => p.page_size === 1 ? { items: [], has_more: true } : { items: [], has_more: false } },
     Array.from({ length: 4 }, (_, i) => ({ id: `c${i}` })), 100, 200);
   assert.ok(groups.every(g => g.activityCheck === 'unavailable' && g.status === 'ok'));
+});
+
+test('auth retries a nonzero verification failure then uses the recovered user', async () => {
+  let calls = 0;
+  const waits = [];
+  const client = createUserClient({ sleep: async ms => waits.push(ms), run: async (_, args) => {
+    assert.deepEqual(args, ['auth', 'status', '--json', '--verify']);
+    if (++calls === 1) throw { stdout: JSON.stringify({ identities: { user: { status: 'verify_failed', available: false, verified: false } } }) };
+    return { stdout: JSON.stringify(status()) };
+  } });
+  assert.equal((await client.authorize()).verified, true);
+  assert.equal(calls, 2);
+  assert.deepEqual(waits, [1000]);
+});
+
+test('auth retries transport failures at most three times without leaking output', async () => {
+  let calls = 0;
+  const waits = [];
+  const client = createUserClient({ sleep: async ms => waits.push(ms), run: async () => {
+    calls++;
+    throw { code: 'ETIMEDOUT', stderr: 'PRIVATE_TOKEN', message: 'PRIVATE_TOKEN' };
+  } });
+  await assert.rejects(client.authorize(), err => /failed or timed out/.test(err.message) && !err.message.includes('PRIVATE_TOKEN'));
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [1000, 2000]);
+});
+
+test('confirmed missing login, expired token, missing scopes and missing CLI are not retried', async () => {
+  for (const outcome of [
+    { stdout: JSON.stringify({ identities: { user: { status: 'missing' } } }) },
+    { stdout: JSON.stringify({ identities: { user: { ...status().identities.user, tokenStatus: 'expired' } } }) },
+    { stdout: JSON.stringify(status('im:chat:read')) },
+    { failure: { code: 'ENOENT' } },
+  ]) {
+    let calls = 0;
+    const client = createUserClient({ sleep: async () => assert.fail('permanent error retried'), run: async () => {
+      calls++;
+      if (outcome.failure) throw outcome.failure;
+      return outcome;
+    } });
+    await assert.rejects(client.authorize());
+    assert.equal(calls, 1);
+  }
+});
+
+test('retry stops when later verification confirms authorization is missing', async () => {
+  let calls = 0;
+  const client = createUserClient({ sleep: async () => {}, run: async () => {
+    if (++calls === 1) throw { code: 'ETIMEDOUT' };
+    return { stdout: JSON.stringify(status('im:chat:read')) };
+  } });
+  await assert.rejects(client.authorize(), AuthorizationRequired);
+  assert.equal(calls, 2);
 });

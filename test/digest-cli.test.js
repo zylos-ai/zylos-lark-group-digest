@@ -11,14 +11,26 @@ function fixture(t) {
   const config = path.join(dir, 'config.json');
   fs.writeFileSync(config, JSON.stringify({ owner_chat_id: 'owner-dm' }));
   fs.writeFileSync(path.join(dir, 'lark-cli'), `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
 const args = process.argv.slice(2);
 const send = data => console.log(JSON.stringify(data));
 if (args[0] === 'auth') {
+  if (process.env.TEST_RECOVER_AUTH) {
+    const counter = path.join(__dirname, 'auth-count');
+    const count = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) : 0;
+    fs.writeFileSync(counter, String(count + 1));
+    if (!count) { send({identities:{user:{status:'verify_failed',available:false,verified:false}}}); process.exit(1); }
+  }
   send({identities:{user:process.env.TEST_VERIFY_FAILED ? {status:'verify_failed',available:false,verified:false} : process.env.TEST_AUTH_MISSING ? {status:'missing',available:false} : {status:'ready',available:true,verified:true,scope:'im:chat:read im:message.group_msg:get_as_user im:message:readonly'}}});
 } else {
   if (args[3] !== '--as' || args[4] !== 'user') process.exit(8);
   const p = JSON.parse(args[6]);
   if (args[2].endsWith('/chats')) send({ok:true,identity:'user',data:{items:process.env.TEST_EMPTY ? Array.from({length:6},(_,i)=>({chat_id:'e'+i,name:'Empty '+i})) : [{chat_id:'c1',name:'Readable'},{chat_id:'c2',name:'Unavailable'}],has_more:false}});
+  else if (process.env.TEST_CARD) {
+    if (p.card_msg_content_type !== 'user_card_content') process.exit(9);
+    send({ok:true,identity:'user',data:{items:[{message_id:'card1',msg_type:'interactive',create_time:'1700000000000',body:{content:JSON.stringify({schema:'2.0',title:'Card heading',body:{elements:[{tag:'markdown',content:'Full card body. '.repeat(60)+'CARD_END'}]}})}}],has_more:false}});
+  }
   else if (process.env.TEST_EMPTY) send({ok:true,identity:'user',data:{items:[],has_more:false}});
   else if (p.container_id === 'c2') {console.error(JSON.stringify({ok:false,error:{type:'api',code:230002,message:'No access'}}));process.exit(1);}
   else send({ok:true,identity:'user',data:{items:[{message_id:'m1',msg_type:'text',create_time:'1700000000000',sender:{id:'u1',sender_name:'Example'},body:{content:JSON.stringify({text:'Hello'})}}],has_more:false}});
@@ -75,4 +87,24 @@ test('executable marks early-stopped groups unscanned and honors full-scan flag'
   assert.equal(result.status, 0, result.stderr);
   data = JSON.parse(fs.readFileSync(path.join(f.dir, 'result.json')));
   assert.ok(data.every(g => g.status === 'ok' && g.messageCount === 0));
+});
+
+
+test('executable recovers transient verification failure without replaying the digest', t => {
+  const f = fixture(t); const result = f.run({ TEST_RECOVER_AUTH: '1' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'auth-count'), 'utf8'), '2');
+  const data = JSON.parse(fs.readFileSync(path.join(f.dir, 'result.json')));
+  assert.equal(data[0].messages.length, 1);
+  assert.equal(data[0].messages[0].id, 'm1');
+});
+
+
+test('executable requests original card content and formats the full body', t => {
+  const f = fixture(t); const result = f.run({ TEST_CARD: '1' });
+  assert.equal(result.status, 0, result.stderr);
+  const data = JSON.parse(fs.readFileSync(path.join(f.dir, 'result.json')));
+  assert.match(data[0].formatted, /Full card body/);
+  assert.match(data[0].formatted, /CARD_END/);
+  assert.match(data[0].messages[0].content, /CARD_END/);
 });

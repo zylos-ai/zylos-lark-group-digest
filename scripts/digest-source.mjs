@@ -31,6 +31,7 @@ export async function listMessages(client, chatId, start, end) {
       const data = await client.get('/open-apis/im/v1/messages', {
         container_id_type: 'chat', container_id: chatId, page_size: 50,
         sort_type: 'ByCreateTimeAsc', with_sender_name: true,
+        card_msg_content_type: 'user_card_content',
         start_time: String(start), end_time: String(end),
         ...(pageToken ? { page_token: pageToken } : {}),
       });

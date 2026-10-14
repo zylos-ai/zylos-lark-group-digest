@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const exec = promisify(execFile);
 export const REQUIRED_SCOPES = ['im:chat:read', 'im:message.group_msg:get_as_user', 'im:message:readonly'];
@@ -39,7 +40,7 @@ function apiError(envelope) {
   return failure;
 }
 
-export function createUserClient({ run = exec } = {}) {
+export function createUserClient({ run = exec, sleep = delay } = {}) {
   async function cli(args) {
     let stdout;
     try {
@@ -55,9 +56,11 @@ export function createUserClient({ run = exec } = {}) {
         if (args[0] === 'auth' && parsed.identities) return parsed;
         if (parsed.ok === false) throw apiError(parsed);
       }
-      throw new Error(err.code === 'ENOENT'
+      const failure = new Error(err.code === 'ENOENT'
         ? 'lark-cli is not installed; install/configure the Lark component first.'
         : 'Lark CLI failed or timed out; retry the digest after checking connectivity.');
+      failure.code = err.code;
+      throw failure;
     }
     let result;
     try { result = JSON.parse(stdout); } catch { throw new Error('Lark CLI returned invalid JSON'); }
@@ -65,7 +68,18 @@ export function createUserClient({ run = exec } = {}) {
     return result;
   }
   return {
-    async authorize() { return checkAuthorization(await cli(['auth', 'status', '--json', '--verify'])); },
+    async authorize() {
+      // CLI verification can fail transiently (including during token refresh).
+      // Retry only this read-only preflight; never restart the digest or relogin.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return checkAuthorization(await cli(['auth', 'status', '--json', '--verify']));
+        } catch (err) {
+          if (err instanceof AuthorizationRequired || err.code === 'ENOENT' || attempt === 2) throw err;
+          await sleep(1000 * (attempt + 1));
+        }
+      }
+    },
     async get(endpoint, params) {
       // Raw GET avoids CLI shortcuts requiring unrelated P2P scopes for group reads.
       const result = await cli(['api', 'GET', endpoint, '--as', 'user', '--params', JSON.stringify(params)]);
