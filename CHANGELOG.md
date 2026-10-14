@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Request original interactive card content and extract full nested card text instead of summarizing transformed placeholder images.
+- Retry transient user authorization verification failures up to three attempts with bounded backoff; preserve immediate actionable authorization failures.
 - Fetch the authorized user's groups and messages via `lark-cli`, including groups the bot has not joined.
 - Verify user login and required read scopes on every run; provide an incremental authorization handoff to the owner when missing or expired.
 - Preserve sender names, resource evidence, and per-group failures instead of silently reporting errors as empty groups.

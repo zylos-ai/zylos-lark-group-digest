@@ -103,6 +103,10 @@ fetching: `im:chat:read`, `im:message.group_msg:get_as_user`, and
 `im:message:readonly` (for message resources). Existing equivalent chat-read
 permissions are accepted. No P2P message permission is needed. The CLI handles
 refresh; the component never stores tokens or falls back to bot identity.
+Transient verification/CLI failures are retried up to three attempts, waiting 1s
+and then 2s. Confirmed missing/expired/revoked authorization, missing scopes,
+and a missing CLI fail immediately. Exhausted retries remain fatal and produce
+no new digest; only the authorization preflight is retried, not the whole run.
 
 If the fetch exits with code **3**, read its JSON error (`scopes`,
 `authorizationCommand`, `notifyOwner`). **Notify `owner_chat_id` through the C4
@@ -139,6 +143,13 @@ creation order, no early stop).
 Raw JSON archives are permanent (not deleted after summarization).
 
 ### 3. Image Content Completion
+
+Message history requests use `card_msg_content_type=user_card_content` to
+retrieve original interactive card content instead of transformed placeholders.
+The formatted output extracts full text from Schema 2.0 bodies, `user_dsl`,
+and legacy card elements; the raw card JSON is retained for image/resource
+inspection. Treat image-only or unrecognized cards as unavailable text, never
+infer a card body from a placeholder image.
 
 The JSON includes `chatId` and raw `messages` (message IDs, content/resource keys,
 sender names, timestamps). For each image or post-embedded image, extract its key

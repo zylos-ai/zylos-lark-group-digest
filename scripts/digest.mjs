@@ -18,6 +18,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createUserClient, AuthorizationRequired } from './user-client.mjs';
 import { listGroups, fetchGroups } from './digest-source.mjs';
+import { extractInteractiveText } from './card-text.mjs';
 
 const { values: args } = parseArgs({
   options: {
@@ -77,6 +78,7 @@ function extractText(content, type) {
   if (!str.startsWith('{') && !str.startsWith('[')) return str.slice(0, 500);
   try {
     const parsed = JSON.parse(str);
+    if (type === 'interactive') return extractInteractiveText(parsed);
     if (parsed.text) return parsed.text;
     if (parsed.image_key && !parsed.title && !parsed.content) return '[图片]';
     if (parsed.title !== undefined || (Array.isArray(parsed.content) && Array.isArray(parsed.content[0]))) {
