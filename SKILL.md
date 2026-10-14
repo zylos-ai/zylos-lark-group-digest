@@ -53,7 +53,8 @@ dependencies:
 
 # Lark Group Digest
 
-Periodically generates structured summaries of all Lark group conversations.
+Periodically generates structured summaries of the authorized user’s Lark groups,
+including groups the bot has not joined. Requires `lark-cli` from the Lark component.
 
 ## Execution Model
 
@@ -95,7 +96,27 @@ All configuration lives in `~/zylos/components/lark-group-digest/config.json`:
 
 Based on current time and `digest_schedule`, select the matching window.
 
-### 2. Fetch Messages
+### 2. Fetch Messages and Check Authorization
+
+Every run verifies the current `lark-cli` user login and these permissions before
+fetching: `im:chat:read`, `im:message.group_msg:get_as_user`, and
+`im:message:readonly` (for message resources). Existing equivalent chat-read
+permissions are accepted. No P2P message permission is needed. The CLI handles
+refresh; the component never stores tokens or falls back to bot identity.
+
+If the fetch exits with code **3**, read its JSON error (`scopes`,
+`authorizationCommand`, `notifyOwner`). **Notify `owner_chat_id` through the C4
+bridge that the digest is blocked on user authorization.** Load the Lark shared
+authentication skill and run the supplied incremental authorization command;
+send the fresh authorization URL and QR image to the owner. Ask the owner to
+confirm when finished, then complete the device flow before retrying the original
+time window. Do not publish an empty digest, mark the run successful, or silently
+fall back to the bot. If the owner has not replied, keep the task pending.
+For API-side permission errors, follow the Lark shared skill's app-scope guidance.
+
+`lark-cli` must be configured for this component's owner. The operator must verify
+the account on login; all discovered groups belong to the currently authorized user.
+
 
 ```bash
 node <skill-dir>/scripts/digest.mjs --start <UNIX_SEC> --end <UNIX_SEC> \
@@ -107,16 +128,26 @@ Raw JSON archives are permanent (not deleted after summarization).
 
 ### 3. Image Content Completion
 
-For groups containing `[图片]`, download and view images using `lark-cli`:
+The JSON includes `chatId` and raw `messages` (message IDs, content/resource keys,
+sender names, timestamps). For each image or post-embedded image, extract its key
+from that message's content, download as the **user**, and inspect it:
 
 ```bash
-lark-cli im +chat-messages-list --as bot --chat-id <CHAT_ID> \
-  --start "<ISO_START>" --end "<ISO_END>" --download-resources
+lark-cli api GET /open-apis/im/v1/messages/<MESSAGE_ID>/resources/<IMAGE_KEY> \
+  --as user --params '{"type":"image"}' --output ./digest-images/<IMAGE_KEY>.png
 ```
 
-View each image with the Read tool, replace placeholders with descriptions.
+Use a directory under the current working directory. Do not use bot identity or
+re-list the group with `+chat-messages-list`: some CLI versions unnecessarily
+require P2P permission for that shortcut. Preserve the source message ID/key.
+If download fails, mark the image unavailable; do not invent its contents.
 
 ### 4. Summarize
+
+Check `status` and `error` first. A group with `status: "error"` is **unavailable or
+partial**, never a no-message group even when `messageCount` is zero. Show failed
+groups separately and disclose incomplete coverage in the owner notification.
+A nonzero fatal exit means no new digest artifact; do not reuse an old output file.
 
 Generate Chinese summaries per group:
 - **整体内容归纳**: one-line items, no multi-sentence paragraphs
@@ -130,7 +161,7 @@ Use the canonical template (`references/digest-template.html`):
 2. Delete instruction comment block before `<html>`
 3. Structure: TL;DR + cards → attention board → group grid → details → no-message list
 4. Scan for sensitive info before publishing
-5. Register via pages CLI (no share links by default)
+5. Register via pages CLI as an Owner-login-protected private page, with no share links. User-identity collection may include groups the bot never joined; never publish the raw archive or create public access.
 
 ### 6. Notify Owner
 

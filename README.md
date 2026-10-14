@@ -21,7 +21,7 @@
 
 - **Scheduled digests** — configurable schedule (default: 3x daily at 08:00, 13:00, 19:00 local time)
 - **Full message coverage** — text, images (with content inspection), files, rich text, cards
-- **Auto-discovery** — dynamically fetches all groups the bot belongs to via Lark API; no manual group list needed
+- **Auto-discovery** — dynamically fetches all groups the authorized user belongs to via Lark API; no manual group list needed
 - **Structured summaries** — one-line items per group, owner attention board, configurable attention rules
 - **Canonical HTML template** — collapsible panels, status pills, TL;DR cards, responsive design
 - **Sensitive-info scanning** — configurable regex patterns to catch leaked IDs before publish
@@ -41,6 +41,21 @@ cd ~/zylos/.claude/skills
 git clone https://github.com/zylos-ai/zylos-lark-group-digest.git lark-group-digest
 cd lark-group-digest && npm install
 ```
+
+## User authorization
+
+Before the first digest, authorize the intended owner in `lark-cli`:
+
+```bash
+lark-cli auth login --scope "im:chat:read im:message.group_msg:get_as_user im:message:readonly" --no-wait --json
+```
+
+The agent sends the returned authorization URL and QR code to the owner, then
+completes the device flow after confirmation. Every run verifies user login and
+scopes. Missing or expired authorization exits with code 3 and an incremental
+login command; the scheduled agent must notify the owner instead of generating
+an empty digest. No private-message access is requested. No bot fallback occurs.
+`lark-cli` manages refresh tokens; the component does not read or store secrets.
 
 ## Configuration
 
@@ -62,7 +77,7 @@ Key settings:
 |---------|---------|
 | `owner_chat_id` | Lark DM chat ID for digest notifications (required) |
 | `owner_display_name` | Name used in attention-item rules |
-| `lark_skill_path` | Path to lark component (auto-detected) |
+| `lark_skill_path` | Legacy compatibility setting; fetching now uses `lark-cli` on PATH |
 | `digest_schedule` | Array of `{hour, suffix, label, window_hours}` |
 | `attention_rules.recruitment_groups` | Group names where new resumes always flag as owner action items |
 | `sensitive_patterns` | Regex patterns for the desensitization scan |
@@ -87,6 +102,23 @@ The AI agent executes the full workflow: fetch messages → inspect images → s
 |--------|---------|
 | `scripts/digest.mjs` | Fetch and format messages from Lark groups |
 | `scripts/pagination.mjs` | Generic token-based API pagination |
+
+## Collection and inactive groups
+
+The fetcher fully paginates the current user's groups in stable creation order,
+then requests messages only inside the digest time window. JSON retains the
+existing `group`, `messageCount`, and `formatted` fields, plus `chatId`, `status`,
+raw `messages`, and an `error` when a group is unavailable or only partially read.
+Publish raw archives only to private local storage. Summary pages must require
+owner login and have no active share links.
+
+The Lark group-list response currently provides **no last-active timestamp**.
+Active-order sorting does not supply one and can omit groups during pagination
+as activity moves entries across pages. Therefore this version does not guess
+inactivity from list position or previous runs. An idle group costs one bounded
+history request; it never triggers a second latest-message probe. Timestamp-based
+skipping requires reliable metadata from the platform before it can be enabled.
+See the official [group-list response and pagination warning](https://open.larksuite.com/document/server-docs/group/chat/list).
 
 ## Design Notes
 

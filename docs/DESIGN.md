@@ -45,8 +45,8 @@ zylos-lark-group-digest/
 
 1. Scheduled task triggers the agent's digest workflow
 2. Agent runs `scripts/digest.mjs` with time-window parameters
-3. Script fetches all messages from Lark groups via the Lark component's SDK
-4. Output: JSON array of `{ group, messageCount, formatted }` per group
+3. Script verifies the current `lark-cli` user session/scopes, then fetches the user’s groups and time-bounded messages as that user (including groups without the bot)
+4. Output: JSON array preserving `{ group, messageCount, formatted }`, with `chatId`, `status`, raw `messages`, and any per-group `error`
 5. Agent reads JSON, downloads/views images, generates Chinese summaries
 6. Agent fills the HTML template and publishes via the pages system
 7. Agent sends notification to the configured owner
