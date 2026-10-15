@@ -1,6 +1,6 @@
 {
   "name": "zylos-lark-group-digest",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Automated Lark group message digest for Zylos agents",
   "main": "src/index.js",
   "type": "module",
