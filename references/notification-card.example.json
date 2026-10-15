@@ -1,0 +1,10 @@
+{
+  "title": "午间群摘要 · 2026-01-01",
+  "window": "08:00–13:00",
+  "accessLabel": "需登录",
+  "url": "https://example.com/digest/example",
+  "stats": { "discovered": 12, "scanned": 8, "active": 5, "messages": 42, "errors": 1 },
+  "images": { "references": 4, "viewed": 2, "unavailable": 1, "pending": 1 },
+  "attention": [{ "title": "示例待办", "detail": "确认演示时间。" }],
+  "highlights": [{ "title": "示例进展", "detail": "演示材料已准备。" }]
+}

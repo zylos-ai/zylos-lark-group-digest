@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Add a pure Card 2.0 digest notification preview builder and stdin JSON CLI with explicit coverage and image-inspection counts. Delivery remains on the existing notification flow pending a supported transport.
+
 ## [0.2.0] - 2026-10-15
 
 ### Changed
