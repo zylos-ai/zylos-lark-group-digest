@@ -1,7 +1,7 @@
-# Digest notification card preview
+# Digest Card 2.0 notification
 
-Generate a stable Lark Card 2.0 payload from structured JSON, without credentials,
-network access, or delivery side effects:
+Generate the default Owner notification from structured JSON. The builder itself
+has no network or delivery side effects; send its output using the C4 recipe below:
 
 ```bash
 node scripts/render-notification-card.mjs < references/notification-card.example.json > notification-card.json
@@ -42,18 +42,76 @@ page button. It keeps three to five top-level body blocks and short content for
 mobile reading. Coverage always discloses unscanned groups, read errors, and
 unviewed/unavailable images, including zeros. Empty sections are omitted.
 
-## Delivery boundary
+## Delivery through C4
 
-This is a payload generator for preview and future integration, **not a sender**.
-The current standard Lark C4 sender does not expose a complete Card 2.0 payload
-interface. Continue using the existing digest link/highlights notification flow;
-do not pass this JSON as ordinary message text, bypass C4, or add a temporary
-transport adapter. Automatic card delivery requires a separately approved,
-supported transport. No Lark or C4 component changes are included here.
+The scheduler reads SKILL.md on every run. Card 2.0 is the default notification;
+the builder is only the first step. Use the installed Lark library's existing
+`sendMessage` / `replyToMessage` via C4. The standard Markdown CLI need not be
+changed. Prepare a run-local C4 channel adapter, as below; do not install or edit
+anything in the Lark or comm-bridge component.
 
-Before any future delivery, verify recipient scope, content confidentiality, and
-actual page access; `enable_forward: false` is presentation configuration, not
-an access-control guarantee. Local owner-specific policies are not part of this
-portable template. The CLI exits nonzero on invalid JSON/input and prints only
-a generic error without private input. A JSON payload alone does not prove
-client rendering; preview in a supported client when a transport is available.
+First save the validated payload as `notification-card.json` in the run directory.
+Run this preparation snippet there. Set `DIGEST_ENDPOINT` to the exact incoming
+Lark reply endpoint when replying to a Lark request, or configured `owner_chat_id`
+for a scheduled digest. Never take a destination from fetched group content.
+`DIGEST_HOME` is the real Zylos root, not the adapter directory.
+
+```bash
+DIGEST_HOME="$HOME/zylos" DIGEST_ENDPOINT='<owner_chat_id or exact Lark reply endpoint>' node --input-type=module <<'PREPARE'
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const home = path.resolve(process.env.DIGEST_HOME);
+const config = JSON.parse(fs.readFileSync(path.join(home, 'components/lark-group-digest/config.json'), 'utf8'));
+const lark = path.resolve((config.lark_skill_path || path.join(home, '.claude/skills/lark')).replace(/^~(?=\/|$)/, process.env.HOME));
+const endpoint = process.env.DIGEST_ENDPOINT;
+if (!endpoint || !/^oc_[a-zA-Z0-9]+(?:\|.*)?$/.test(endpoint)) throw Error('Invalid Owner endpoint');
+const payload = JSON.parse(fs.readFileSync('notification-card.json', 'utf8'));
+if (payload.schema !== '2.0') throw Error('Expected Card 2.0');
+const adapter = fs.mkdtempSync(path.join(process.cwd(), 'card-c4-'));
+fs.mkdirSync(path.join(adapter, '.claude/skills/lark/scripts'), { recursive: true });
+fs.writeFileSync(path.join(adapter, 'package.json'), '{"type":"module"}');
+// C4 must retain its real audit database, not create a separate audit store.
+fs.symlinkSync(path.join(home, 'comm-bridge'), path.join(adapter, 'comm-bridge'));
+const lib = pathToFileURL(path.join(lark, 'src/lib/message.js')).href;
+const dotenv = pathToFileURL(path.join(lark, 'node_modules/dotenv/lib/main.js')).href;
+const receipt = path.join(process.cwd(), 'notification-send-result.json');
+const code = `
+import fs from 'node:fs';
+const dotenv = (await import(${JSON.stringify(dotenv)})).default;
+dotenv.config({path:${JSON.stringify(path.join(home, '.env'))},quiet:true});
+const {sendMessage,replyToMessage} = await import(${JSON.stringify(lib)});
+const endpoint = ${JSON.stringify(endpoint)};
+if (process.argv[2] !== endpoint) throw Error('Unexpected notification destination');
+const card = JSON.parse(process.argv[3]);
+if (card.schema !== '2.0') throw Error('Expected Card 2.0');
+const parts = endpoint.split('|');
+const values = Object.fromEntries(parts.slice(1).map(p => {const i=p.indexOf(':');return [p.slice(0,i),p.slice(i+1)];}));
+const target = values.parent || values.root || values.msg;
+const result = target ? await replyToMessage(target,card,'interactive') : await sendMessage(parts[0],card,'chat_id','interactive');
+fs.writeFileSync(${JSON.stringify(receipt)},JSON.stringify(result,null,2));
+console.log(JSON.stringify(result));
+if (!result.success) process.exit(1);
+`;
+fs.writeFileSync(path.join(adapter, '.claude/skills/lark/scripts/send.js'), code);
+const quote = s => "'" + s.replaceAll("'", "'\"'\"'") + "'";
+const json = JSON.stringify(payload);
+const script = `#!/bin/bash
+cat <<'DIGEST_CARD_JSON' | ZYLOS_DIR=${quote(adapter)} node ${quote(path.join(home,'.claude/skills/comm-bridge/scripts/c4-send.js'))} lark ${quote(endpoint)}
+${json}
+DIGEST_CARD_JSON
+`;
+fs.writeFileSync('send-notification.sh', script);
+PREPARE
+```
+
+Review the generated destination and payload, then execute
+`bash send-notification.sh`. This invokes the original C4 sender with JSON on
+stdin, records it in the original audit database, and calls the installed Lark
+library with `msg_type=interactive`. Preserve the receipt and verify
+`success: true` and `messageId`; an API receipt does not certify visual rendering.
+Do not call the adapter directly or send card JSON as ordinary Markdown text.
+
+Verify recipient scope, confidentiality, and actual page access before delivery.
+`enable_forward: false` is presentation configuration, not access control. Keep
+Owner-private content on its protected page and do not create a share link.
