@@ -192,7 +192,10 @@ Use the canonical template (`references/digest-template.html`):
 
 ### 6. Notify Owner
 
-Send Lark DM with the digest link and key highlights.
+Send Lark DM with the digest link and key highlights. This remains the default
+notification flow. An optional Card 2.0 payload preview generator is documented
+in `references/notification-card.md`; it does not send messages. Do not change
+automatic delivery until a supported card transport is available and approved.
 
 ### 7. Check Todo
 
