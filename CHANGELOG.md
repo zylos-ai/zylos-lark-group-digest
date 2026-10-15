@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Make scheduled Owner notifications use Card 2.0 by default and document delivery through C4 using the existing Lark messaging library, without changing the Lark component or recreating scheduler tasks.
+
 ## [0.3.0] - 2026-10-15
 
 ### Added

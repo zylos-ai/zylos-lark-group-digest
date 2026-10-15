@@ -192,10 +192,19 @@ Use the canonical template (`references/digest-template.html`):
 
 ### 6. Notify Owner
 
-Send Lark DM with the digest link and key highlights. This remains the default
-notification flow. An optional Card 2.0 payload preview generator is documented
-in `references/notification-card.md`; it does not send messages. Do not change
-automatic delivery until a supported card transport is available and approved.
+Send the Owner notification as a native **Card 2.0** by default, including the
+digest link, key highlights, scanned/unscanned/error counts, and image inspection
+counts. Read `references/notification-card.md` for the input contract and the
+executable C4 delivery recipe. Generate the payload with the existing builder,
+then deliver through C4 using the existing Lark messaging library; no Lark
+component upgrade or code change is required. The scheduled tasks already load
+this skill, so this rule applies to all three daily runs.
+
+Keep the payload and send receipt with this run's evidence. A generated JSON file
+alone is not delivery: check the C4 exit status and Lark success/message ID. If
+card delivery fails, report the failure and use a clearly labelled text fallback
+when the card is confirmed unsent; do not claim the card was delivered or blindly
+retry an ambiguous send. Do not send both card and duplicate text on success.
 
 ### 7. Check Todo
 
