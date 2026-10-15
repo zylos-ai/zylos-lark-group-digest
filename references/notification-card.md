@@ -4,7 +4,7 @@ Generate a stable Lark Card 2.0 payload from structured JSON, without credential
 network access, or delivery side effects:
 
 ```bash
-node scripts/render-notification-card.mjs < references/notification-card.example.json > /tmp/digest-card.json
+node scripts/render-notification-card.mjs < references/notification-card.example.json > notification-card.json
 ```
 
 The example is synthetic. To use the pure builder from JavaScript, import
