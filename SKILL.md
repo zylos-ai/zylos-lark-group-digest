@@ -1,6 +1,6 @@
 ---
 name: lark-group-digest
-version: 0.2.0
+version: 0.3.0
 description: |
   Generate Lark group message digest (configurable schedule, default 3x daily).
   Fetches messages via digest.mjs, summarizes in Chinese, writes to pages, notifies
