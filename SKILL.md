@@ -183,9 +183,19 @@ Generate Chinese summaries per group:
 
 ### 5. Build and Publish HTML
 
-Use the canonical template (`references/digest-template.html`):
-1. Copy template, fill `<!-- FILL: ... -->` placeholders
-2. Delete instruction comment block before `<html>`
+Use the canonical template (`references/digest-template.html`). It is a fixed
+format: do not change its information architecture, CSS, or block structure
+unless the owner asks. The template has no instruction header to delete; the
+published file must start with `<!DOCTYPE html>` followed directly by the
+`<html lang="zh-CN">` line.
+1. Copy the whole template; replace only the content of each `<!-- FILL: ... -->` placeholder and keep head/CSS unchanged
+2. Owner-approved elements (keep all of them):
+   - each group is one collapsible `details` block, collapsed by default
+   - its `summary` title = group name + optional status pill (incident/todo/approval…) + message count (`<span class="cnt">N 条</span>`), readable while collapsed
+   - top TL;DR one-line conclusion + three number cards (groups with messages / total, owner todo count, one other key figure)
+   - §1 "Owner 需要关注的" board (`.qboard`/`.qcard`); write "无" explicitly when empty
+   - §2 group overview grid (`.grid-groups`), sorted by message volume, anchors jump to details
+   - §3 per-group details (collapsed blocks); §4 no-message group list
 3. Structure: TL;DR + cards → attention board → group grid → details → no-message list
 4. Scan for sensitive info before publishing
 5. Register via pages CLI as an Owner-login-protected private page, with no share links. User-identity collection may include groups the bot never joined; never publish the raw archive or create public access.
